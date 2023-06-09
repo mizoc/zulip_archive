@@ -1,7 +1,10 @@
 #!/bin/bash
+# Author:mizoc
+# License:MIT
 
+test -e "$1" || exit 1
+eval `tail -n +2 "$1"` # define $email, $site, $key
 QUERY_NUM=500 # number of getting messages per a request
-eval `tail -n +2 zuliprc` # define $email, $site, $key
 DOMAIN=`echo $site|sed -E 's/^.*(http|https):\/\/([^/]+).*/\2/g'`
 mkdir -p $DOMAIN/{raw_json,html,data,avatars}
 
@@ -21,7 +24,7 @@ done
 # Convert json to html
 ls $DOMAIN/raw_json |sed 's/_.*//g'|sort|uniq|
 while read STREAM;do
-test -e $DOMAIN/html/${STREAM}.html && continue # pass already downloaded streams
+# test -e $DOMAIN/html/${STREAM}.html && continue # pass already downloaded streams
 cat <<HEADER >$DOMAIN/html/${STREAM}.html
 <!DOCTYPE html>
 <html lang="ja">
@@ -40,16 +43,16 @@ cat <<HEADER >$DOMAIN/html/${STREAM}.html
     <div class="messages-list">
 HEADER
 
-jq -s add $DOMAIN/raw_json/${STREAM}_*|sed 's/\\n//g' |jq -r '.messages|sort_by(.timestamp)[]|[.id, .sender_full_name, .content, .timestamp, .subject, .avatar_url]|@tsv'|
-  awk -F "\t" '{print "<div class=\"message-gutter\" id=\""$1"\"><div class=\"\" data-stringify-ignore=\"true\"><img class=\"avatar\" src=\"avatars/avatar_img.png\" /></div><div class=\"\"><span class=\"sender\"><strong>["$5"]</strong>  "$2"</span><span class=\"timestamp\"><span class=\"c-timestamp__label\">"system("TZ=JST-9 date -d @"$4" +\"%Y/%b/%d %I:%M %p\"")"</span></span><br/><div class=\"text\">"$3"</div></div></div>"}' >>$DOMAIN/html/${STREAM}.html
-
+jq -s add $DOMAIN/raw_json/${STREAM}_*|sed 's/\\n//g' |jq -r '.messages|sort_by(.timestamp)[]|if .avatar_url==null then .avatar_url="no_image" else .avatar_url = .avatar_url end |[.id, .sender_full_name, .content, .timestamp, .subject, .avatar_url]|@tsv'|
+  awk -F "\t" '{printf "<div class=\"message-gutter\" id=\""$1"\"><div class=\"\" data-stringify-ignore=\"true\"><img class=\"avatar\" src=\"../avatars/"; sub(/^.*\//, "", $6); gsub(/=/, "-" , $6);gsub(/\?/, "-" , $6); printf $6".png\" /></div><div class=\"\"><span class=\"sender\"><strong>["$5"]</strong>  "$2"</span><span class=\"timestamp\"><span class=\"c-timestamp__label\">"; "TZ=JST-9 date -d @"$4" +\"%Y/%b/%d %I:%M %p\""|getline date; print date"</span></span><br/><div class=\"text\">"$3"</div></div></div>"}' >>$DOMAIN/html/${STREAM}.html #2>/dev/null
 
 # Download attachments
 mkdir -p $DOMAIN/data/$STREAM
-sed -E 's%.*(/user_uploads.*)\".*%\1%g' $DOMAIN/html/$STREAM.html|/bin/grep user_uploads|
+# sed -E 's%.*(/user_uploads.*)\"><.*%\1%g' $DOMAIN/html/$STREAM.html|/bin/grep user_uploads|
+cat $DOMAIN/html/$STREAM.html|pup 'img' attr{src}text{} |/bin/grep user_uploads|
 while read URL;do
-  FILE=`echo $URL|sed 's%.*/%%g'`
-  curl -sSX GET $site`curl -sSX GET -G $site/api/v1$URL -u $email:$key|jq -r .url` -o $DOMAIN/data/$STREAM/$FILE
+  FILE=`basename $URL`
+  test -e $DOMAIN/data/$STREAM/$FILE || curl -sSX GET $site`curl -sSX GET -G $site/api/v1$URL -u $email:$key|jq -r .url` -o $DOMAIN/data/$STREAM/$FILE
   sed -i "s%$URL%\.\./data/$STREAM/$FILE%g" $DOMAIN/html/$STREAM.html # link url
 done
 
@@ -70,6 +73,16 @@ cat <<FOOTTER >>$DOMAIN/html/${STREAM}.html
 FOOTTER
 done
 
+# Download avatar images
+# CURRENT_DIR=`pwd`
+# cd $DOMAIN/avatars
+jq -s add $DOMAIN/raw_json/*|sed 's/\\n//g' |jq -r '.messages[].avatar_url'|grep -v null |sort|uniq|
+while read URL;do
+  # AVATAR_PATH=`echo $URL|sed -E 's%^.*/(.*)\?.*%\1%g'`
+  test -e  $DOMAIN/avatars/`basename $URL|tr ?= -`.png|| curl "$URL" -o $DOMAIN/avatars/`basename $URL|tr ?= -`.png >/dev/null 2>&1
+  # sed -i "s%avatars/https.*$AVATAR_PATH\?.*version=2\.png%../avatars/$AVATAR_PATH.png%g" $DOMAIN/html/*.html # link url
+done
+# cd $CURRENT_DIR
 
 # Create index.html
 cat <<INDEX_HEADER >$DOMAIN/index.html
@@ -177,7 +190,7 @@ select {
   html:focus-within {
    scroll-behavior: auto;
   }
-  
+
   *,
   *::before,
   *::after {
@@ -238,7 +251,7 @@ audio, video {
   background-color: #fafafa;
   border: 2px solid #39113E;
   padding: 10px;
-  border-radius: 5px; 
+  border-radius: 5px;
 }
 
 .message-gutter div:first-of-type {
@@ -381,32 +394,5 @@ audio, video {
   height: 100%;
   width: calc(100vw - 250px);
   border: none;
-}
-
-#search {
-  margin: 10px;
-  text-align: center;
-}
-
-#search ul {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-#search li {
-  padding: 5px;
-  border-bottom: 1px solid #E2E2E2;
-  background: hsl(0deg 0% 98%);
-  border-radius: 5px;
-  width: 600px;
-  text-align: left;
-  margin-bottom: 5px;
-}
-
-#search a {
-  text-decoration: none;
-  color: unset;
 }
 STYLE
