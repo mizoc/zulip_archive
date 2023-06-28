@@ -15,8 +15,8 @@ while read STREAM;do
   LAST_MSG_ID=`curl -sSX GET -G ${site}/api/v1/messages -u ${email}:$key --data-urlencode anchor=newest  --data-urlencode num_before=1 --data-urlencode num_after=0 --data-urlencode include_anchor=true --data-urlencode narrow="[{\"operand\": \"$STREAM\", \"operator\": \"stream\"}]"|jq .messages[0].id `
 
   while :;do
-      curl -sSX GET -G ${site}/api/v1/messages -u ${email}:$key --data-urlencode anchor=$ANCHOR_COUNT  --data-urlencode num_before=0 --data-urlencode num_after=$QUERY_NUM --data-urlencode include_anchor=true --data-urlencode apply_markdown=true --data-urlencode narrow="[{\"operand\": \"$STREAM\", \"operator\": \"stream\"}]" > $DOMAIN/raw_json/${STREAM}_$ANCHOR_COUNT.json
-      ANCHOR_COUNT=$(( `cat $DOMAIN/raw_json/${STREAM}_$ANCHOR_COUNT.json|jq .messages[-1].id` + 1 ))
+      curl -sSX GET -G ${site}/api/v1/messages -u ${email}:$key --data-urlencode anchor=$ANCHOR_COUNT  --data-urlencode num_before=0 --data-urlencode num_after=$QUERY_NUM --data-urlencode include_anchor=true --data-urlencode apply_markdown=true --data-urlencode narrow="[{\"operand\": \"$STREAM\", \"operator\": \"stream\"}]" > $DOMAIN/raw_json/${STREAM}_${ANCHOR_COUNT}.json
+      ANCHOR_COUNT=$(( `cat $DOMAIN/raw_json/${STREAM}_${ANCHOR_COUNT}.json|jq .messages[-1].id` + 1 ))
       (( $ANCHOR_COUNT > $LAST_MSG_ID )) && break
   done
 done
@@ -24,7 +24,7 @@ done
 # Convert json to html
 ls $DOMAIN/raw_json |sed 's/_.*//g'|sort|uniq|
 while read STREAM;do
-# test -e $DOMAIN/html/${STREAM}.html && continue # pass already downloaded streams
+test -e $DOMAIN/html/${STREAM}.html && continue # skip streams already downloaded
 cat <<HEADER >$DOMAIN/html/${STREAM}.html
 <!DOCTYPE html>
 <html lang="ja">
@@ -49,23 +49,66 @@ jq -s add $DOMAIN/raw_json/${STREAM}_*|sed 's/\\n//g' |jq -r '.messages|sort_by(
 # Download attachments
 mkdir -p $DOMAIN/data/$STREAM
 # sed -E 's%.*(/user_uploads.*)\"><.*%\1%g' $DOMAIN/html/$STREAM.html|/bin/grep user_uploads|
-cat $DOMAIN/html/$STREAM.html|pup 'img' attr{src}text{} |/bin/grep user_uploads|
+cat <(cat $DOMAIN/html/$STREAM.html|pup 'img' attr{src}text{}) <(cat $DOMAIN/html/$STREAM.html|pup '[class="text"] > p > a attr{href}')|/bin/grep user_uploads|
 while read URL;do
   FILE=`basename $URL`
   test -e $DOMAIN/data/$STREAM/$FILE || curl -sSX GET $site`curl -sSX GET -G $site/api/v1$URL -u $email:$key|jq -r .url` -o $DOMAIN/data/$STREAM/$FILE
   sed -i "s%$URL%\.\./data/$STREAM/$FILE%g" $DOMAIN/html/$STREAM.html # link url
 done
 
-
 # FOOTER
 cat <<FOOTTER >>$DOMAIN/html/${STREAM}.html
     </div>
     <script>
-      if (window.location.hash) {
-        document.getElementById(window.location.hash).scrollTo();
-      } else {
-        scrollBy({ top: 99999999 });
-      }
+    var msgtag=document.getElementsByClassName('message-gutter');
+    var topicDiv=document.getElementsByClassName('topic')[0];
+    var sdtag=document.getElementsByClassName('sender');
+    var elAll=document.createElement('button');
+    elAll.addEventListener('click',function(){
+    for(var i=0;i<msgtag.length;i++){msgtag[i].style.display='flex'};
+    var element = document.documentElement;
+    var bottom = element.scrollHeight - element.clientHeight;
+    window.scrollTo({top: bottom, left: 0, behavior: 'smooth'});
+    var old=document.querySelector('.selected2'); if(old!=null){old.classList.remove('selected2')}; elAll.classList.add('selected2'); elAll.classList.remove('notSelected2')
+    },false);
+    elAll.innerText='すべてのトピックを表示';
+    elAll.classList.add('topicSwitcher');
+    elAll.classList.add('selected2');
+    topicDiv.appendChild(elAll);
+  window.onload=()=>{var element = document.documentElement;
+    var bottom = element.scrollHeight - element.clientHeight;
+ window.scrollTo({top: bottom, left: 0, behavior: 'smooth'});}
+
+    var topicList={};//連想配列。何番目のメッセージかも記録。
+    for (var i=0;i<sdtag.length;i++){
+    var topicI1=sdtag[i].querySelector('strong').innerText;//[トピック名]
+    var topicI=topicI1.slice(1,topicI1.length-1);//トピック名
+      if(topicList[topicI]==null){topicList[topicI]=[i]}else{topicList[topicI].push(i)}
+    }
+  var topicNameList=Object.keys(topicList);//トピック名のみ
+var tnl2=Object.keys(topicList);//no topicとstream eventを並べ替えた配列
+if(topicNameList.indexOf('stream events')>-1){tnl2.splice(topicNameList.indexOf('stream events'),1);tnl2.push('stream events');}
+if(topicNameList.indexOf('(no topic)')>-1){tnl2.splice(tnl2.indexOf('(no topic)'),1);tnl2.push('(no topic)');} //トピック名のみ。no topicは最後に。stream eventは最後から2番目に。
+  for (var i=0;i<topicNameList.length;i++){
+  var el=document.createElement('button');
+  el.id='displayTopic'+topicNameList.indexOf(tnl2[i]);//並べ替える前の番号なので注意。iとは別。
+  if(tnl2[i]!='(no topic)'){el.innerText=tnl2[i];//ここは並べ替えた後の番号
+  }else{el.innerText='トピックなし'}
+  el.classList.add('topicSwitcher');
+  el.classList.add('notSelected2');
+  el.addEventListener('click',disp,false);
+topicDiv.appendChild(el);
+  }
+  function disp(e){ 
+var btnId=e.target.id;var old=document.querySelector('.selected2'); if(old!=null){old.classList.remove('selected2');old.classList.add('notSelected2')}; e.target.classList.add('selected2');e.target.classList.remove('notSelected2');
+var targetTopic=topicNameList[Number(btnId.slice(12,btnId.length))]; 
+for (var i=0;i<msgtag.length;i++){
+if (topicList[targetTopic].indexOf(i)>-1){msgtag[i].style.display='flex'}else{msgtag[i].style.display='none'}
+}
+        var element = document.documentElement;
+    var bottom = element.scrollHeight - element.clientHeight;
+ window.scrollTo({top: bottom, left: 0, behavior: 'smooth'});
+}
     </script>
   </div>
 </body>
@@ -97,6 +140,7 @@ cat <<INDEX_HEADER >$DOMAIN/index.html
 <body>
   <div id="index">
     <div id="channels">
+    <a><img id="realm-logo" src="https://zulipchat.com/static/images/logo/zulip-org-logo.svg?version=0" alt="" class="nav-logo no-drag"></a>
       <p class="section">Streams</p>
       <ul>
 INDEX_HEADER
@@ -116,6 +160,18 @@ cat <<INDEX_FOOTER >>$DOMAIN/index.html
               const iframe = document.getElementsByName('iframe')[0]
               iframe.src = "html/" + decodeURIComponent(channelValue) + '.html' + '#' + (tsValue || '');
             }
+    </script>
+    <script>
+    //開いたとき
+    var fn1=document.querySelector('iframe').src;
+    var fn=decodeURIComponent(fn1.slice(fn1.indexOf('html'),fn1.length));
+    var fnl=document.querySelector('a[href="'+fn+'"]');
+    var ls=document.querySelectorAll('a[target="iframe"]');
+    for(var i=0;i<ls.length;i++){
+    ls[i].classList.add('notSelected');
+ ls[i].addEventListener('click',function(){var old=document.querySelector('.selected');if(old!=null){old.classList.remove('selected');old.classList.add('notSelected')}this.classList.add('selected');this.classList.remove('notSelected')});
+    }
+       if(fnl!=null){fnl.classList.add('selected');fnl.classList.remove('notSelected')} //最初に表示されているストリームだけ.selectedを付与し、.notSelectedを削除
     </script>
   </div>
 </body>
@@ -201,24 +257,13 @@ select {
   }
 }
 
-@font-face {
-  font-family: "Lato";
-  src: url('fonts/Lato-Regular.ttf') format('truetype');
-  font-weight: normal;
-  font-style: normal;
-}
-
-@font-face {
-  font-family: "Lato";
-  src: url('fonts/Lato-Bold.ttf') format('truetype');
-  font-weight: bold;
-  font-style: normal;
-}
+/*fontの読み込み削除*/
 
 body, html {
   font-family: 'Lato', sans-serif;
   font-size: 14px;
   color: rgb(29, 28, 29);
+  background: #efefef;/*変更*/
 }
 
 a {
@@ -238,13 +283,16 @@ audio, video {
   width: 36px;
   border-radius: 7px;
   margin-right: 10px;
-  background: #c1c1c1;
+  background: #efefef;
+
 }
 
 .message-gutter {
   display: flex;
-  margin: 10px;
+  border-bottom: 1px solid #BBB; /*変更 margin削った*/
+  padding: 10px; /*変更*/
   scroll-margin-top: 120px;
+  background: #fff;/*変更*/
 }
 
 .message-gutter:target {
@@ -275,7 +323,7 @@ audio, video {
 
 .header {
   position: sticky;
-  background: #fff;
+  background: hsl(0, 0%, 96%);/*変更*/
   color: #616061;
   top: 0;
   left: 0;
@@ -326,18 +374,23 @@ audio, video {
   outline: none;
 }
 
+.message_inline_image img{
+  width: 150px;
+}
+
 #index {
   display: flex;
   height: calc(100vh - 4px);
 }
 
 #channels {
-  background: #39113E;
+  background: #efefef; /*変更*/
   width: 250px;
-  color: #CDC3CE;
+  color: #000; /*変更*/
   padding-top: 10px;
   overflow: scroll;
   padding-bottom: 20px;
+  border-right: 1px solid #ccc;/*変更*/
 }
 
 #channels ul {
@@ -352,7 +405,7 @@ audio, video {
 
 #channels .section {
   font-weight: 800;
-  color: #fff;
+  color: #6d6d6d;/*変更*/
   margin-top: 10px;
 }
 
@@ -363,7 +416,7 @@ audio, video {
 #channels a {
   padding: 5px;
   display: block;
-  color: #CDC3CE;
+  color: hsl(0, 0%, 15%); /*変更*/
   text-decoration: none;
   padding-left: 20px;
   display: flex;
@@ -371,6 +424,7 @@ audio, video {
   white-space: pre;
   text-overflow: ellipsis;
   overflow: hidden;
+  border-radius: 4px;
 }
 
 #channels a .avatar {
@@ -381,9 +435,8 @@ audio, video {
   object-fit: contain;
 }
 
-#channels a:hover {
-  background: #301034;
-  color: #edeced;
+#channels .notSelected:hover {
+  background: hsla(120, 12.3%, 71.4%, 0.38); /*変更*/
 }
 
 #messages {
@@ -395,4 +448,9 @@ audio, video {
   width: calc(100vw - 250px);
   border: none;
 }
+/*ここから付け足し*/
+.topicSwitcher{margin: 2px;border:none;cursor:pointer;background: #E4E4E4}
+.notSelected2:hover{background: hsla(120, 12.3%, 71.4%, 0.38);}
+.selected {background: hsl(202, 56%, 91%); font-weight:600!important}
+.selected2 {background: hsl(202, 56%, 91%);font-weight:600!important}
 STYLE
