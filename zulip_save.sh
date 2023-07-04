@@ -7,6 +7,7 @@ eval `tail -n +2 "$1"` # define $email, $site, $key
 QUERY_NUM=500 # number of getting messages per a request
 DOMAIN=`echo $site|sed -E 's/^.*(http|https):\/\/([^/]+).*/\2/g'`
 mkdir -p $DOMAIN/{raw_json,html,data,avatars}
+# curl -s -o $DOMAIN/avatars/no_image.png
 
 # Download messages
 curl -sSX GET -G ${site}/api/v1/streams -u ${email}:$key | jq -r .streams[].name |fzf --height 50% --layout reverse -m | # Select streams to download
@@ -60,6 +61,8 @@ done
 cat <<FOOTTER >>$DOMAIN/html/${STREAM}.html
     </div>
     <script>
+    var msgLinks=document.getElementsByTagName('a');
+    for(var i=0;i<msgLinks.length;i++){msgLinks[i].setAttribute('target','_blank')}
     var msgtag=document.getElementsByClassName('message-gutter');
     var topicDiv=document.getElementsByClassName('topic')[0];
     var sdtag=document.getElementsByClassName('sender');
