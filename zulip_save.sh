@@ -7,7 +7,6 @@ eval `tail -n +2 "$1"` # define $email, $site, $key
 QUERY_NUM=500 # number of getting messages per a request
 DOMAIN=`echo $site|sed -E 's/^.*(http|https):\/\/([^/]+).*/\2/g'`
 mkdir -p $DOMAIN/{raw_json,html,data,avatars}
-# curl -s -o $DOMAIN/avatars/no_image.png
 
 # Download messages
 curl -sSX GET -G ${site}/api/v1/streams -u ${email}:$key | jq -r .streams[].name |fzf --height 50% --layout reverse -m | # Select streams to download
@@ -120,8 +119,7 @@ FOOTTER
 done
 
 # Download avatar images
-# CURRENT_DIR=`pwd`
-# cd $DOMAIN/avatars
+test -e $DOMAIN/avatars/no_image.png || curl -s -o $DOMAIN/avatars/no_image.png https://raw.githubusercontent.com/mizoc/zulip_archive/main/no_image.png
 jq -s add $DOMAIN/raw_json/*|sed 's/\\n//g' |jq -r '.messages[].avatar_url'|grep -v null |sort|uniq|
 while read URL;do
   # AVATAR_PATH=`echo $URL|sed -E 's%^.*/(.*)\?.*%\1%g'`
