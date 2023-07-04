@@ -10,6 +10,6 @@ Most of the HTML/CSS code are copy of https://github.com/felixrieseberg/slack-ar
 
 ### Usage
 1. Download your zuliprc.
-2. `./zulip_archive.sh path_to_zuliprc`
-3. Press tab to select streams downloaded.
+2. `curl -s https://raw.githubusercontent.com/mizoc/zulip_archive/main/zulip_save.sh | bash -s path_to_your_zuliprc`
+3. Press tab to select streams to download.
 4. Open index.html in browser.
