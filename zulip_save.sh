@@ -12,10 +12,10 @@ mkdir -p $DOMAIN/{raw_json,html,data,avatars}
 curl -sSX GET -G ${site}/api/v1/streams -u ${email}:$key | jq -r .streams[].name |fzf --height 50% --layout reverse -m | # Select streams to download
 while read STREAM;do
   ANCHOR_COUNT=oldest
-  LAST_MSG_ID=`curl -sSX GET -G ${site}/api/v1/messages -u ${email}:$key --data-urlencode anchor=newest  --data-urlencode num_before=1 --data-urlencode num_after=0 --data-urlencode include_anchor=true --data-urlencode narrow="[{\"operand\": \"$STREAM\", \"operator\": \"stream\"}]"|jq .messages[0].id `
+  LAST_MSG_ID=`curl -sSX GET -G ${site}/api/v1/messages -u ${email}:$key --data-urlencode anchor=newest  --data-urlencode num_before=1 --data-urlencode num_after=0 --data-urlencode include_anchor=true --data-urlencode client_gravatar=false --data-urlencode narrow="[{\"operand\": \"$STREAM\", \"operator\": \"stream\"}]"|jq .messages[0].id `
 
   while :;do
-      curl -sSX GET -G ${site}/api/v1/messages -u ${email}:$key --data-urlencode anchor=$ANCHOR_COUNT  --data-urlencode num_before=0 --data-urlencode num_after=$QUERY_NUM --data-urlencode include_anchor=true --data-urlencode apply_markdown=true --data-urlencode narrow="[{\"operand\": \"$STREAM\", \"operator\": \"stream\"}]" > $DOMAIN/raw_json/${STREAM}_${ANCHOR_COUNT}.json
+      curl -sSX GET -G ${site}/api/v1/messages -u ${email}:$key --data-urlencode anchor=$ANCHOR_COUNT  --data-urlencode num_before=0 --data-urlencode num_after=$QUERY_NUM --data-urlencode include_anchor=true --data-urlencode apply_markdown=true --data-urlencode client_gravatar=false --data-urlencode narrow="[{\"operand\": \"$STREAM\", \"operator\": \"stream\"}]" > $DOMAIN/raw_json/${STREAM}_${ANCHOR_COUNT}.json
       ANCHOR_COUNT=$(( `cat $DOMAIN/raw_json/${STREAM}_${ANCHOR_COUNT}.json|jq .messages[-1].id` + 1 ))
       (( $ANCHOR_COUNT > $LAST_MSG_ID )) && break
   done
@@ -44,7 +44,9 @@ cat <<HEADER >$DOMAIN/html/${STREAM}.html
 HEADER
 
 jq -s add $DOMAIN/raw_json/${STREAM}_*|sed 's/\\n//g' |jq -r '.messages|sort_by(.timestamp)[]|if .avatar_url==null then .avatar_url="no_image" else .avatar_url = .avatar_url end |[.id, .sender_full_name, .content, .timestamp, .subject, .avatar_url]|@tsv'|
-  awk -F "\t" '{printf "<div class=\"message-gutter\" id=\""$1"\"><div class=\"\" data-stringify-ignore=\"true\"><img class=\"avatar\" src=\"../avatars/"; sub(/^.*\//, "", $6); gsub(/=/, "-" , $6);gsub(/\?/, "-" , $6); printf $6".png\" /></div><div class=\"\"><span class=\"sender\"><strong>["$5"]</strong>  "$2"</span><span class=\"timestamp\"><span class=\"c-timestamp__label\">"; "TZ=JST-9 date -d @"$4" +\"%Y/%b/%d %I:%M %p\""|getline date; print date"</span></span><br/><div class=\"text\">"$3"</div></div></div>"}' >>$DOMAIN/html/${STREAM}.html #2>/dev/null
+  awk -F "\t" '{printf "<div class=\"message-gutter\" id=\""$1"\"><div class=\"\" data-stringify-ignore=\"true\"><img class=\"avatar\" src=\"../avatars/"; sub(/^.*\//, "", $6); gsub(/=/, "-" , $6); gsub(/&/, "-" , $6);gsub(/\?/, "-" , $6); printf $6".png\" /></div><div class=\"\"><span class=\"sender\"><strong>["$5"]</strong>  "$2"</span><span class=\"timestamp\"><span class=\"c-timestamp__label\">"; "TZ=JST-9 date -d @"$4" +\"%Y/%b/%d %I:%M %p\""|getline date; print date"</span></span><br/><div class=\"text\">"$3"</div></div></div>"}' >>$DOMAIN/html/${STREAM}.html #2>/dev/null
+# jq -s add $DOMAIN/raw_json/${STREAM}_*|sed 's/\\n//g' |jq -r '.messages|sort_by(.timestamp)[] |[.id, .sender_full_name, .content, .timestamp, .subject]|@tsv'|
+#   awk -F "\t" '{printf "<div class=\"message-gutter\" id=\""$1"\"><div class=\"\" data-stringify-ignore=\"true\"><img class=\"avatar\" src=\"../avatars/"; gsub(/ /, "" , $2); printf $2".png\" /></div><div class=\"\"><span class=\"sender\"><strong>["$5"]</strong>  "$2"</span><span class=\"timestamp\"><span class=\"c-timestamp__label\">"; "TZ=JST-9 date -d @"$4" +\"%Y/%b/%d %I:%M %p\""|getline date; print date"</span></span><br/><div class=\"text\">"$3"</div></div></div>"}' >>$DOMAIN/html/${STREAM}.html #2>/dev/null
 
 # Download attachments
 mkdir -p $DOMAIN/data/$STREAM
@@ -101,9 +103,9 @@ if(topicNameList.indexOf('(no topic)')>-1){tnl2.splice(tnl2.indexOf('(no topic)'
   el.addEventListener('click',disp,false);
 topicDiv.appendChild(el);
   }
-  function disp(e){ 
+  function disp(e){
 var btnId=e.target.id;var old=document.querySelector('.selected2'); if(old!=null){old.classList.remove('selected2');old.classList.add('notSelected2')}; e.target.classList.add('selected2');e.target.classList.remove('notSelected2');
-var targetTopic=topicNameList[Number(btnId.slice(12,btnId.length))]; 
+var targetTopic=topicNameList[Number(btnId.slice(12,btnId.length))];
 for (var i=0;i<msgtag.length;i++){
 if (topicList[targetTopic].indexOf(i)>-1){msgtag[i].style.display='flex'}else{msgtag[i].style.display='none'}
 }
@@ -123,7 +125,7 @@ test -e $DOMAIN/avatars/no_image.png || curl -s -o $DOMAIN/avatars/no_image.png 
 jq -s add $DOMAIN/raw_json/*|sed 's/\\n//g' |jq -r '.messages[].avatar_url'|grep -v null |sort|uniq|
 while read URL;do
   # AVATAR_PATH=`echo $URL|sed -E 's%^.*/(.*)\?.*%\1%g'`
-  test -e  $DOMAIN/avatars/`basename $URL|tr ?= -`.png|| curl "$URL" -o $DOMAIN/avatars/`basename $URL|tr ?= -`.png >/dev/null 2>&1
+  test -e  $DOMAIN/avatars/`basename "$URL"|tr '?&=' -`.png|| curl "$URL" -o $DOMAIN/avatars/`basename "$URL"|tr '?&=' -`.png >/dev/null 2>&1
   # sed -i "s%avatars/https.*$AVATAR_PATH\?.*version=2\.png%../avatars/$AVATAR_PATH.png%g" $DOMAIN/html/*.html # link url
 done
 # cd $CURRENT_DIR
